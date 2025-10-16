@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Simulatore Scheduling CPU</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #f7f9fc;
+      color: #333;
+      padding: 20px;
+      max-width: 900px;
+      margin: auto;
+    }
+    textarea {
+      width: 100%;
+      height: 150px;
+      font-family: monospace;
+      resize: vertical;
+    }
+    select, input, button {
+      margin: 8px 0;
+      padding: 6px;
+      font-size: 16px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 20px;
+    }
+    th, td {
+      border: 1px solid #ddd;
+      padding: 8px;
+      text-align: center;
+    }
+    th {
+      background: #0078d7;
+      color: white;
+    }
+    .gantt {
+      margin-top: 20px;
+      display: flex;
+      flex-wrap: wrap;
+    }
+    .block {
+      padding: 8px;
+      color: white;
+      font-weight: bold;
+      margin-right: 2px;
+      border-radius: 4px;
+    }
+  </style>
+</head>
+<body>
+  <h1>Simulatore Algoritmi di Scheduling</h1>
+
+  <h3>Inserisci o genera JSON dei task</h3>
+  <textarea id="jsonInput" placeholder='[
+  {"id":"T1","arrival_time":0,"burst_time":5,"priority":2},
+  {"id":"T2","arrival_time":2,"burst_time":3,"priority":1}
+]'></textarea><br>
+  <button onclick="generateTasks()">Genera 5 Task Casuali</button>
+
+  <h3>Scegli algoritmo</h3>
+  <select id="algorithm">
+    <option value="FCFS">FCFS</option>
+    <option value="SJF">SJF</option>
+    <option value="RR">Round Robin</option>
+    <option value="Priority">Priority</option>
+  </select>
+  <br>
+  <label>Time Quantum (solo per RR): </label>
+  <input type="number" id="quantum" value="2" min="1"><br>
+
+  <button onclick="simulate()">Simula</button>
+
+  <div id="output"></div>
+
+  <script>
+    function generateTasks() {
+      const n = 5;
+      const tasks = [];
+      for (let i = 1; i <= n; i++) {
+        tasks.push({
+          id: "T" + i,
+          arrival_time: Math.floor(Math.random() * 10),
+          burst_time: Math.floor(Math.random() * 9) + 1,
+          priority: Math.floor(Math.random() * 5) + 1
+        });
+      }
+      document.getElementById("jsonInput").value = JSON.stringify(tasks, null, 2);
+    }
+
+    function simulate() {
+      const jsonInput = document.getElementById("jsonInput").value;
+      const algo = document.getElementById("algorithm").value;
+      const quantum = parseInt(document.getElementById("quantum").value);
+      let tasks;
+
+      try {
+        tasks = JSON.parse(jsonInput);
+      } catch {
+        alert("JSON non valido!");
+        return;
+      }
+
+      // Ordina per arrivo
+      tasks.sort((a, b) => a.arrival_time - b.arrival_time);
+
+      let result;
+      switch (algo) {
+        case "FCFS": result = fcfs(tasks); break;
+        case "SJF": result = sjf(tasks); break;
+        case "RR": result = rr(tasks, quantum); break;
+        case "Priority": result = priority(tasks); break;
+        default: alert("Algoritmo non riconosciuto."); return;
+      }
+
+      showResults(result, algo);
+    }
+
+    // ---------- ALGORITMI ----------
+    function fcfs(tasks) {
+      let time = 0;
+      const result = [];
+      for (let t of tasks) {
+        if (time < t.arrival_time) time = t.arrival_time;
+        const start = time;
+        const finish = start + t.burst_time;
+        result.push({ ...t, start_time: start, completion_time: finish });
+        time = finish;
+      }
+      return result;
+    }
+
+    function sjf(tasks) {
+      const result = [];
+      let time = 0, ready = [], completed = [];
+      const total = tasks.length;
+      while (completed.length < total) {
+        ready = tasks.filter(t => t.arrival_time <= time && !completed.includes(t));
+        if (ready.length === 0) { time++; continue; }
+        const shortest = ready.reduce((a, b) => a.burst_time < b.burst_time ? a : b);
+        const start = time;
+        const finish = start + shortest.burst_time;
+        result.push({ ...shortest, start_time: start, completion_time: finish });
+        completed.push(shortest);
+        time = finish;
+      }
+      return result;
+    }
+
+    function rr(tasks, quantum) {
+      let queue = [];
+      let time = 0;
+      const result = [];
+      const rem = tasks.map(t => ({ ...t, remaining: t.burst_time }));
+      while (rem.some(t => t.remaining > 0)) {
+        const available = rem.filter(t => t.arrival_time <= time && t.remaining > 0);
+        if (available.length === 0) { time++; continue; }
+        const current = available[0];
+        const start = time;
+        const exec = Math.min(current.remaining, quantum);
+        time += exec;
+        current.remaining -= exec;
+        result.push({ id: current.id, start_time: start, completion_time: time });
+      }
+      return result;
+    }
+
+    function priority(tasks) {
+      const result = [];
+      let time = 0, completed = [];
+      const total = tasks.length;
+      while (completed.length < total) {
+        const available = tasks.filter(t => t.arrival_time <= time && !completed.includes(t));
+        if (available.length === 0) { time++; continue; }
+        const high = available.reduce((a, b) => a.priority < b.priority ? a : b);
+        const start = time;
+        const finish = start + high.burst_time;
+        result.push({ ...high, start_time: start, completion_time: finish });
+        completed.push(high);
+        time = finish;
+      }
+      return result;
+    }
+
+    // ---------- OUTPUT ----------
+    function showResults(data, algo) {
+      let html = `<h3>Risultati - ${algo}</h3><table><tr>
+        <th>Task</th><th>Arrivo</th><th>Burst</th><th>Start</th><th>Fine</th><th>Turnaround</th><th>Attesa</th></tr>`;
+      const gantt = [];
+      data.forEach(t => {
+        const tat = t.completion_time - t.arrival_time;
+        const wt = tat - t.burst_time;
+        html += `<tr><td>${t.id}</td><td>${t.arrival_time}</td><td>${t.burst_time}</td>
+                 <td>${t.start_time}</td><td>${t.completion_time}</td>
+                 <td>${tat}</td><td>${wt}</td></tr>`;
+        gantt.push(`<div class="block" style="background:#${Math.floor(Math.random()*16777215).toString(16)}">${t.id}<br>${t.start_time}-${t.completion_time}</div>`);
+      });
+      html += `</table><div class="gantt">${gantt.join("")}</div>`;
+      document.getElementById("output").innerHTML = html;
+    }
+  </script>
+</body>
+</html>
