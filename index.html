@@ -152,22 +152,70 @@
     }
 
     function rr(tasks, quantum) {
-      let queue = [];
-      let time = 0;
+      // Clona i task per evitare di modificare l'array originale
+      const queue = [];
+      const remaining = tasks.map(t => ({ ...t, remaining: t.burst_time }));
       const result = [];
-      const rem = tasks.map(t => ({ ...t, remaining: t.burst_time }));
-      while (rem.some(t => t.remaining > 0)) {
-        const available = rem.filter(t => t.arrival_time <= time && t.remaining > 0);
-        if (available.length === 0) { time++; continue; }
-        const current = available[0];
+      let time = 0;
+
+      // Finché ci sono processi da completare
+      while (remaining.some(t => t.remaining > 0)) {
+        // Aggiungi processi arrivati fino a questo tempo
+        for (let t of remaining) {
+          if (t.arrival_time <= time && !queue.includes(t) && t.remaining > 0) {
+            queue.push(t);
+          }
+        }
+
+        if (queue.length === 0) {
+          time++; // CPU idle
+          continue;
+        }
+
+        const current = queue.shift(); // Prendi il primo in coda
+
+        // Calcola tempo di esecuzione
         const start = time;
         const exec = Math.min(current.remaining, quantum);
         time += exec;
         current.remaining -= exec;
-        result.push({ id: current.id, start_time: start, completion_time: time });
+
+        // Registra un segmento di esecuzione
+        result.push({
+          ...current,
+          start_time: start,
+          completion_time: time
+        });
+
+        // Aggiungi nuovi task arrivati mentre questo veniva eseguito
+        for (let t of remaining) {
+          if (t.arrival_time > start && t.arrival_time <= time && !queue.includes(t) && t.remaining > 0) {
+            queue.push(t);
+          }
+        }
+
+        // Se il processo non è finito, rimetti in coda
+        if (current.remaining > 0) {
+          queue.push(current);
+        }
       }
-      return result;
+
+      // Ricomponi i risultati finali (ultimo completion per ogni task)
+      const finalResults = [];
+      for (let t of tasks) {
+        const segments = result.filter(r => r.id === t.id);
+        const firstStart = segments[0].start_time;
+        const lastFinish = segments[segments.length - 1].completion_time;
+        finalResults.push({
+          ...t,
+          start_time: firstStart,
+          completion_time: lastFinish
+        });
+      }
+
+      return finalResults;
     }
+
 
     function priority(tasks) {
       const result = [];
